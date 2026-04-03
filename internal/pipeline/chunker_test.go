@@ -147,3 +147,65 @@ func TestChunkSpeechSegments_ManySmallSegments(t *testing.T) {
 		t.Errorf("last chunk end = %.1f, want %.1f", lastChunk.End, lastSeg.End)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Additional edge-case tests
+// ---------------------------------------------------------------------------
+
+func TestChunkSpeechSegments_singleShortSegment(t *testing.T) {
+	// A segment shorter than the chunk duration should produce exactly one chunk
+	// with identical Start/End.
+	segments := []SpeechSegment{
+		{Start: 2.0, End: 4.0}, // 2s, well under 20s
+	}
+	chunks := ChunkSpeechSegments(segments, 20.0)
+
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	if chunks[0].Start != 2.0 || chunks[0].End != 4.0 {
+		t.Errorf("chunk = {%.1f, %.1f}, want {2.0, 4.0}", chunks[0].Start, chunks[0].End)
+	}
+}
+
+func TestChunkSpeechSegments_exactlyOneChunk(t *testing.T) {
+	// A single segment whose duration is exactly equal to maxDuration should
+	// produce one chunk without being split.
+	segments := []SpeechSegment{
+		{Start: 0.0, End: 15.0}, // exactly 15s
+	}
+	chunks := ChunkSpeechSegments(segments, 15.0)
+
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	if chunks[0].Start != 0.0 || chunks[0].End != 15.0 {
+		t.Errorf("chunk = {%.1f, %.1f}, want {0.0, 15.0}", chunks[0].Start, chunks[0].End)
+	}
+}
+
+func TestChunkSpeechSegments_zeroChunkDuration(t *testing.T) {
+	// When maxDuration is zero the function should fall back to
+	// DefaultChunkDuration and not enter an infinite loop.
+	segments := []SpeechSegment{
+		{Start: 0.0, End: 10.0},
+		{Start: 11.0, End: 19.0},
+	}
+
+	// This must return without hanging.
+	chunks := ChunkSpeechSegments(segments, 0)
+	if len(chunks) == 0 {
+		t.Fatal("expected at least one chunk, got 0")
+	}
+
+	// With the default 20s, the total span (0-19) fits in one chunk.
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk with zero (default) maxDuration, got %d", len(chunks))
+	}
+
+	// Also verify negative maxDuration behaves the same way.
+	chunks2 := ChunkSpeechSegments(segments, -5.0)
+	if len(chunks2) != 1 {
+		t.Fatalf("expected 1 chunk with negative maxDuration, got %d", len(chunks2))
+	}
+}

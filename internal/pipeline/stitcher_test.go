@@ -260,3 +260,168 @@ func TestStitchResults_LanguageFromFirstNonEmpty(t *testing.T) {
 		t.Errorf("languageProb = %f, want 0.88", result.LanguageProb)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Additional edge-case tests
+// ---------------------------------------------------------------------------
+
+func TestStitchResults_emptyChunkSlice(t *testing.T) {
+	// An explicitly empty (non-nil) slice should behave the same as nil.
+	result := StitchResults([]ChunkResult{})
+	if result == nil {
+		t.Fatal("StitchResults([]ChunkResult{}) returned nil, want non-nil empty result")
+	}
+	if len(result.Segments) != 0 {
+		t.Errorf("expected 0 segments, got %d", len(result.Segments))
+	}
+	if result.Duration != 0 {
+		t.Errorf("expected duration 0, got %f", result.Duration)
+	}
+	if result.Language != "" {
+		t.Errorf("expected empty language, got %q", result.Language)
+	}
+}
+
+func TestStitchResults_singleChunkPassthrough(t *testing.T) {
+	// A single chunk with offset 0 should pass through text and timing unchanged.
+	chunks := []ChunkResult{
+		{
+			Offset: 0.0,
+			Result: &engine.Result{
+				Language:     "ja",
+				LanguageProb: 0.91,
+				Segments: []engine.Segment{
+					{
+						ID:    0,
+						Start: 1.0,
+						End:   3.5,
+						Text:  "single chunk text",
+						Words: []engine.Word{
+							{Word: "single", Start: 1.0, End: 1.8, Prob: 0.95},
+							{Word: "chunk", Start: 1.9, End: 2.5, Prob: 0.93},
+							{Word: "text", Start: 2.6, End: 3.5, Prob: 0.97},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result := StitchResults(chunks)
+	if len(result.Segments) != 1 {
+		t.Fatalf("expected 1 segment, got %d", len(result.Segments))
+	}
+
+	seg := result.Segments[0]
+	if seg.Text != "single chunk text" {
+		t.Errorf("text = %q, want %q", seg.Text, "single chunk text")
+	}
+	// With offset 0, times should be unchanged.
+	if seg.Start != 1.0 || seg.End != 3.5 {
+		t.Errorf("segment times = {%.1f, %.1f}, want {1.0, 3.5}", seg.Start, seg.End)
+	}
+	if len(seg.Words) != 3 {
+		t.Fatalf("expected 3 words, got %d", len(seg.Words))
+	}
+	if seg.Words[0].Start != 1.0 || seg.Words[2].End != 3.5 {
+		t.Errorf("word times not passed through correctly")
+	}
+}
+
+func TestStitchResults_offsetCorrection(t *testing.T) {
+	// Three chunks at different offsets -- verify every segment and word
+	// timestamp is shifted correctly.
+	chunks := []ChunkResult{
+		{
+			Offset: 5.0,
+			Result: &engine.Result{
+				Language: "en",
+				Segments: []engine.Segment{
+					{
+						ID:    0,
+						Start: 0.0,
+						End:   2.0,
+						Text:  "alpha",
+						Words: []engine.Word{
+							{Word: "alpha", Start: 0.0, End: 2.0, Prob: 0.9},
+						},
+					},
+				},
+			},
+		},
+		{
+			Offset: 20.0,
+			Result: &engine.Result{
+				Segments: []engine.Segment{
+					{
+						ID:    0,
+						Start: 0.5,
+						End:   1.5,
+						Text:  "beta",
+						Words: []engine.Word{
+							{Word: "beta", Start: 0.5, End: 1.5, Prob: 0.8},
+						},
+					},
+				},
+			},
+		},
+		{
+			Offset: 40.0,
+			Result: &engine.Result{
+				Segments: []engine.Segment{
+					{
+						ID:    0,
+						Start: 0.0,
+						End:   3.0,
+						Text:  "gamma",
+						Words: []engine.Word{
+							{Word: "gamma", Start: 0.0, End: 3.0, Prob: 0.7},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result := StitchResults(chunks)
+
+	if len(result.Segments) != 3 {
+		t.Fatalf("expected 3 segments, got %d", len(result.Segments))
+	}
+
+	// Segment 0: offset 5.0 -> Start 5.0, End 7.0
+	if math.Abs(result.Segments[0].Start-5.0) > 0.001 || math.Abs(result.Segments[0].End-7.0) > 0.001 {
+		t.Errorf("seg[0] times = {%.1f, %.1f}, want {5.0, 7.0}", result.Segments[0].Start, result.Segments[0].End)
+	}
+	if math.Abs(result.Segments[0].Words[0].Start-5.0) > 0.001 {
+		t.Errorf("seg[0] word start = %.1f, want 5.0", result.Segments[0].Words[0].Start)
+	}
+
+	// Segment 1: offset 20.0 -> Start 20.5, End 21.5
+	if math.Abs(result.Segments[1].Start-20.5) > 0.001 || math.Abs(result.Segments[1].End-21.5) > 0.001 {
+		t.Errorf("seg[1] times = {%.1f, %.1f}, want {20.5, 21.5}", result.Segments[1].Start, result.Segments[1].End)
+	}
+	if math.Abs(result.Segments[1].Words[0].Start-20.5) > 0.001 {
+		t.Errorf("seg[1] word start = %.1f, want 20.5", result.Segments[1].Words[0].Start)
+	}
+
+	// Segment 2: offset 40.0 -> Start 40.0, End 43.0
+	if math.Abs(result.Segments[2].Start-40.0) > 0.001 || math.Abs(result.Segments[2].End-43.0) > 0.001 {
+		t.Errorf("seg[2] times = {%.1f, %.1f}, want {40.0, 43.0}", result.Segments[2].Start, result.Segments[2].End)
+	}
+	if math.Abs(result.Segments[2].Words[0].End-43.0) > 0.001 {
+		t.Errorf("seg[2] word end = %.1f, want 43.0", result.Segments[2].Words[0].End)
+	}
+
+	// IDs should be sequential.
+	for i, seg := range result.Segments {
+		if seg.ID != i {
+			t.Errorf("seg[%d].ID = %d, want %d", i, seg.ID, i)
+		}
+	}
+
+	// Duration should be max end = 43.0.
+	if math.Abs(result.Duration-43.0) > 0.001 {
+		t.Errorf("duration = %.1f, want 43.0", result.Duration)
+	}
+}

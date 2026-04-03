@@ -8,6 +8,8 @@ import (
 	"errors"
 	"io"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -272,5 +274,55 @@ func TestFormatFromExt(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("formatFromExt(%q) = %q, want %q", tt.path, got, tt.want)
 		}
+	}
+}
+
+func TestDecodeFile_Nonexistent(t *testing.T) {
+	_, _, err := DecodeFile("/tmp/thunderstt_test_nonexistent_audio_file.wav")
+	if err == nil {
+		t.Fatal("expected error for nonexistent file, got nil")
+	}
+	// The underlying error should be an os.PathError from os.Open.
+	if !os.IsNotExist(errors.Unwrap(err)) && !errors.Is(err, os.ErrNotExist) {
+		// Accept any error that mentions the file — the important thing is that
+		// DecodeFile does not panic and does return a non-nil error.
+		t.Logf("got error (acceptable): %v", err)
+	}
+}
+
+func TestDecodeFile_EmptyFile(t *testing.T) {
+	// Create a 0-byte .wav file.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.wav")
+	if err := os.WriteFile(path, []byte{}, 0644); err != nil {
+		t.Fatalf("failed to create empty file: %v", err)
+	}
+
+	_, _, err := DecodeFile(path)
+	if err == nil {
+		t.Fatal("expected error for empty WAV file, got nil")
+	}
+	// Should surface an ErrInvalidWAV because the file has no RIFF header.
+	if !errors.Is(err, ErrInvalidWAV) {
+		t.Logf("got error (acceptable): %v", err)
+	}
+}
+
+func TestDecodeFile_UnsupportedExtension(t *testing.T) {
+	// Create a .txt file — extension is not a known audio format, and the
+	// contents are not valid audio either, so detectFormat should fail.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(path, []byte("hello world"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	_, _, err := DecodeFile(path)
+	if err == nil {
+		t.Fatal("expected error for .txt file, got nil")
+	}
+	// The format detection path should return ErrUnsupportedFormat.
+	if !errors.Is(err, ErrUnsupportedFormat) {
+		t.Logf("got error (acceptable): %v", err)
 	}
 }

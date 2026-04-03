@@ -60,6 +60,31 @@ func TestResample_48kTo16k(t *testing.T) {
 	}
 }
 
+func TestResample_SingleSample(t *testing.T) {
+	input := []float32{0.42}
+	out := Resample(input, 16000, 48000)
+
+	// A single sample resampled to 3x the rate should produce a few samples,
+	// all equal to the original value (only one source sample to interpolate from).
+	if len(out) == 0 {
+		t.Fatal("expected non-empty output for single-sample input")
+	}
+	for i, v := range out {
+		if diff := math.Abs(float64(v - 0.42)); diff > 1e-6 {
+			t.Errorf("out[%d] = %f, want ~0.42", i, v)
+		}
+	}
+
+	// Single sample, same rate: should return the original slice.
+	out2 := Resample(input, 16000, 16000)
+	if len(out2) != 1 {
+		t.Errorf("expected 1 sample, got %d", len(out2))
+	}
+	if &out2[0] != &input[0] {
+		t.Error("expected same slice for single sample same-rate")
+	}
+}
+
 func TestResample_Upsample(t *testing.T) {
 	// 8kHz -> 16kHz should double the number of samples.
 	input := []float32{0.0, 1.0, 0.0, -1.0}

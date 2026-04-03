@@ -229,3 +229,42 @@ func TestValidationError_Error(t *testing.T) {
 		t.Errorf("error message = %q, unexpected format", msg)
 	}
 }
+
+func TestConfig_MaxFileSize_default(t *testing.T) {
+	// Clear env var to ensure default is used.
+	t.Setenv("THUNDERSTT_MAX_FILE_SIZE", "")
+	os.Unsetenv("THUNDERSTT_MAX_FILE_SIZE")
+
+	cfg := NewFromEnv()
+
+	want := int64(25 * 1024 * 1024)
+	if cfg.MaxFileSize != want {
+		t.Errorf("MaxFileSize = %d, want %d", cfg.MaxFileSize, want)
+	}
+}
+
+func TestConfig_RateLimit_default(t *testing.T) {
+	// Clear env var to ensure default is used.
+	t.Setenv("THUNDERSTT_RATE_LIMIT", "")
+	os.Unsetenv("THUNDERSTT_RATE_LIMIT")
+
+	cfg := NewFromEnv()
+
+	want := 100.0
+	if cfg.RateLimit != want {
+		t.Errorf("RateLimit = %f, want %f", cfg.RateLimit, want)
+	}
+}
+
+func TestConfig_RateBurst_default(t *testing.T) {
+	// Clear env var to ensure default is used.
+	t.Setenv("THUNDERSTT_RATE_BURST", "")
+	os.Unsetenv("THUNDERSTT_RATE_BURST")
+
+	cfg := NewFromEnv()
+
+	want := 200
+	if cfg.RateBurst != want {
+		t.Errorf("RateBurst = %d, want %d", cfg.RateBurst, want)
+	}
+}

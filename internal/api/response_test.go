@@ -113,6 +113,30 @@ func TestWriteBytes_TextPlain(t *testing.T) {
 	}
 }
 
+func TestWriteErrorWithCode(t *testing.T) {
+	w := httptest.NewRecorder()
+	WriteErrorWithCode(w, http.StatusTooManyRequests, "rate_limited", "slow down")
+
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d", w.Code)
+	}
+
+	var resp struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	}
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Error.Code != "rate_limited" {
+		t.Fatalf("expected code rate_limited, got %s", resp.Error.Code)
+	}
+	if resp.Error.Message != "slow down" {
+		t.Fatalf("expected message 'slow down', got %s", resp.Error.Message)
+	}
+}
+
 func TestHttpStatusToErrorType(t *testing.T) {
 	tests := []struct {
 		status   int

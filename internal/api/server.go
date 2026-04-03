@@ -92,6 +92,8 @@ func NewServer(p *pipeline.Pipeline, cfg *config.Config) *Server {
 	s.router.Use(Logging)
 	s.router.Use(Recovery)
 	s.router.Use(CORS)
+	// Rate limiting: 100 requests/sec per IP with burst of 200.
+	s.router.Use(RateLimit(100, 200))
 	s.router.Use(MaxBodySize(scfg.MaxFileSize))
 	s.router.Use(RequestTimeout(scfg.RequestTimeout))
 
@@ -151,6 +153,11 @@ func (s *Server) Start() error {
 
 	if err := httpServer.Shutdown(ctx); err != nil {
 		return fmt.Errorf("graceful shutdown failed: %w", err)
+	}
+
+	// Drain in-flight transcription jobs.
+	if err := s.queue.Drain(ctx); err != nil {
+		log.Warn().Err(err).Msg("some jobs did not complete during shutdown")
 	}
 
 	log.Info().Msg("HTTP server stopped gracefully")

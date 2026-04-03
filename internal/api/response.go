@@ -29,6 +29,24 @@ func WriteJSON(w http.ResponseWriter, status int, data interface{}) {
 	}
 }
 
+// WriteErrorWithCode writes a structured error response with an explicit error code.
+func WriteErrorWithCode(w http.ResponseWriter, status int, code string, message string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+
+	resp := errorResponse{
+		Error: errorDetail{
+			Message: message,
+			Type:    httpStatusToErrorType(status),
+			Code:    code,
+		},
+	}
+
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		log.Error().Err(err).Msg("failed to encode error response")
+	}
+}
+
 // WriteError writes a structured error response in the OpenAI error format.
 func WriteError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

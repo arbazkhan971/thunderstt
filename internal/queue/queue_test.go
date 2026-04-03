@@ -224,6 +224,41 @@ func TestQueue_Len_Cap(t *testing.T) {
 	}
 }
 
+func TestQueue_Drain_empty(t *testing.T) {
+	t.Parallel()
+
+	q := NewQueue(2)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err := q.Drain(ctx)
+	if err != nil {
+		t.Fatalf("drain on empty queue: %v", err)
+	}
+}
+
+func TestQueue_Drain_waitsForJobs(t *testing.T) {
+	t.Parallel()
+
+	q := NewQueue(2)
+	started := make(chan struct{})
+
+	// Submit a slow job.
+	go q.Submit(context.Background(), func() (*engine.Result, error) {
+		close(started)
+		time.Sleep(200 * time.Millisecond)
+		return &engine.Result{}, nil
+	})
+
+	<-started // wait for job to start
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := q.Drain(ctx)
+	if err != nil {
+		t.Fatalf("drain should succeed: %v", err)
+	}
+}
+
 // containsSubstring is a small helper to avoid importing strings in tests.
 func containsSubstring(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {

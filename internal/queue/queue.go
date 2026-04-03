@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/arbaz/thunderstt/internal/engine"
 )
@@ -14,6 +15,10 @@ type Queue struct {
 	// sem is a counting semaphore implemented as a buffered channel.
 	// Its capacity equals maxConcurrent.
 	sem chan struct{}
+
+	// activeJobs tracks the number of in-flight jobs so Drain can
+	// block until they all complete.
+	activeJobs sync.WaitGroup
 }
 
 // NewQueue creates a queue that allows at most maxConcurrent jobs to run
@@ -43,8 +48,14 @@ func (q *Queue) Submit(ctx context.Context, fn func() (*engine.Result, error)) (
 		return nil, fmt.Errorf("queue: context cancelled while waiting for worker slot: %w", ctx.Err())
 	}
 
-	// Ensure the slot is released when work completes.
-	defer func() { <-q.sem }()
+	// Track this job for graceful drain.
+	q.activeJobs.Add(1)
+
+	// Ensure the slot is released and the job is marked done when work completes.
+	defer func() {
+		<-q.sem
+		q.activeJobs.Done()
+	}()
 
 	// Check context again after acquiring the slot in case it expired
 	// while we were waiting.
@@ -66,6 +77,24 @@ func (q *Queue) execute(fn func() (*engine.Result, error)) (result *engine.Resul
 	}()
 
 	return fn()
+}
+
+// Drain blocks until all in-flight jobs complete or the context expires.
+// It is intended to be called during graceful shutdown so that queued
+// transcription work can finish before the process exits.
+func (q *Queue) Drain(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		q.activeJobs.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Len returns the number of worker slots currently in use. This is useful

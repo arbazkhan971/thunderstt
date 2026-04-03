@@ -32,14 +32,27 @@ type Config struct {
 
 	// ModelsDir is the directory where downloaded model files are stored.
 	ModelsDir string
+
+	// MaxFileSize is the maximum upload file size in bytes. Default: 25 MB.
+	MaxFileSize int64
+
+	// RateLimit is the maximum requests per second per IP. Default: 100.
+	// Set to 0 to disable rate limiting.
+	RateLimit float64
+
+	// RateBurst is the burst capacity for the rate limiter. Default: 200.
+	RateBurst int
 }
 
 // Defaults used when neither flags nor environment variables are set.
 const (
-	DefaultHost     = "0.0.0.0"
-	DefaultPort     = 8080
-	DefaultModel    = "base"
-	DefaultLogLevel = "info"
+	DefaultHost        = "0.0.0.0"
+	DefaultPort        = 8080
+	DefaultModel       = "base"
+	DefaultLogLevel    = "info"
+	DefaultMaxFileSize = 25 * 1024 * 1024 // 25 MB
+	DefaultRateLimit   = 100.0
+	DefaultRateBurst   = 200
 )
 
 // defaultModelsDir returns the platform-appropriate default models directory.
@@ -66,6 +79,9 @@ func NewFromServeFlags(host string, port int, model string, workers int, logLeve
 
 	// Back-fill from environment for fields the flags might not cover.
 	cfg.ModelsDir = envOrDefault("THUNDERSTT_MODELS_DIR", defaultModelsDir())
+	cfg.MaxFileSize = envInt64OrDefault("THUNDERSTT_MAX_FILE_SIZE", DefaultMaxFileSize)
+	cfg.RateLimit = envFloat64OrDefault("THUNDERSTT_RATE_LIMIT", DefaultRateLimit)
+	cfg.RateBurst = envIntOrDefault("THUNDERSTT_RATE_BURST", DefaultRateBurst)
 
 	// Override zero / empty values from env.
 	if cfg.Host == "" {
@@ -92,12 +108,15 @@ func NewFromServeFlags(host string, port int, model string, workers int, logLeve
 // that do not accept the full set of serve flags.
 func NewFromEnv() *Config {
 	return &Config{
-		Host:      envOrDefault("THUNDERSTT_HOST", DefaultHost),
-		Port:      envIntOrDefault("THUNDERSTT_PORT", DefaultPort),
-		Model:     envOrDefault("THUNDERSTT_MODEL", DefaultModel),
-		Workers:   envIntOrDefault("THUNDERSTT_WORKERS", runtime.NumCPU()),
-		LogLevel:  envOrDefault("THUNDERSTT_LOG_LEVEL", DefaultLogLevel),
-		ModelsDir: envOrDefault("THUNDERSTT_MODELS_DIR", defaultModelsDir()),
+		Host:        envOrDefault("THUNDERSTT_HOST", DefaultHost),
+		Port:        envIntOrDefault("THUNDERSTT_PORT", DefaultPort),
+		Model:       envOrDefault("THUNDERSTT_MODEL", DefaultModel),
+		Workers:     envIntOrDefault("THUNDERSTT_WORKERS", runtime.NumCPU()),
+		LogLevel:    envOrDefault("THUNDERSTT_LOG_LEVEL", DefaultLogLevel),
+		ModelsDir:   envOrDefault("THUNDERSTT_MODELS_DIR", defaultModelsDir()),
+		MaxFileSize: envInt64OrDefault("THUNDERSTT_MAX_FILE_SIZE", DefaultMaxFileSize),
+		RateLimit:   envFloat64OrDefault("THUNDERSTT_RATE_LIMIT", DefaultRateLimit),
+		RateBurst:   envIntOrDefault("THUNDERSTT_RATE_BURST", DefaultRateBurst),
 	}
 }
 
@@ -151,4 +170,32 @@ func envIntOrDefault(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// envInt64OrDefault returns the int64 value of the named environment variable,
+// or fallback if the variable is unset, empty, or not a valid integer.
+func envInt64OrDefault(key string, fallback int64) int64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+// envFloat64OrDefault returns the float64 value of the named environment
+// variable, or fallback if the variable is unset, empty, or not a valid float.
+func envFloat64OrDefault(key string, fallback float64) float64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return fallback
+	}
+	return f
 }

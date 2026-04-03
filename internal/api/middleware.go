@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
+	"github.com/arbaz/thunderstt/internal/metrics"
 )
 
 // requestIDKey is the context key for the X-Request-ID value.
@@ -49,6 +52,15 @@ func Logging(next http.Handler) http.Handler {
 		next.ServeHTTP(ww, r)
 
 		duration := time.Since(start)
+
+		// Record Prometheus metrics.
+		statusStr := strconv.Itoa(ww.status)
+		metrics.HTTPRequestsTotal.WithLabelValues(r.Method, r.URL.Path, statusStr).Inc()
+		metrics.HTTPRequestDuration.WithLabelValues(r.Method, r.URL.Path).Observe(duration.Seconds())
+		if r.ContentLength > 0 {
+			metrics.HTTPRequestSizeBytes.WithLabelValues(r.Method, r.URL.Path).Observe(float64(r.ContentLength))
+		}
+
 		logger := log.With().
 			Str("request_id", GetRequestID(r.Context())).
 			Str("method", r.Method).

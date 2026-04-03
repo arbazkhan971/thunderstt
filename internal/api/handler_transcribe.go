@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/arbaz/thunderstt/internal/engine"
 	"github.com/arbaz/thunderstt/internal/format"
+	"github.com/arbaz/thunderstt/internal/metrics"
 )
 
 // HandleTranscribe processes POST /v1/audio/transcriptions requests.
@@ -81,19 +83,29 @@ func (s *Server) HandleTranscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Submit transcription to the queue for bounded concurrency.
+	transcribeStart := time.Now()
 	result, err := s.queue.Submit(ctx, func() (*engine.Result, error) {
 		return s.pipeline.TranscribeFile(ctx, tmpPath, opts)
 	})
 	if err != nil {
 		// Distinguish between context cancellation and internal errors.
 		if ctx.Err() != nil {
+			metrics.TranscriptionTotal.WithLabelValues(req.Model, "error").Inc()
 			logger.Warn().Err(err).Msg("transcription cancelled")
 			WriteError(w, http.StatusServiceUnavailable, "request cancelled or timed out")
 			return
 		}
+		metrics.TranscriptionTotal.WithLabelValues(req.Model, "error").Inc()
 		logger.Error().Err(err).Msg("transcription failed")
 		WriteError(w, http.StatusInternalServerError, "transcription failed: "+err.Error())
 		return
+	}
+
+	transcribeDuration := time.Since(transcribeStart)
+	metrics.TranscriptionTotal.WithLabelValues(req.Model, "success").Inc()
+	metrics.TranscriptionDuration.WithLabelValues(req.Model).Observe(transcribeDuration.Seconds())
+	if result != nil {
+		metrics.AudioDuration.WithLabelValues(req.Model).Observe(result.Duration)
 	}
 
 	// Format the result according to the requested response_format.

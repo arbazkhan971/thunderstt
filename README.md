@@ -214,14 +214,17 @@ Performance varies by model, hardware, and audio characteristics. The following 
 ```
 cmd/thunderstt/     CLI entry point (cobra commands)
 internal/
-  config/           Configuration management
-  engine/           Transcription engine interface
-  model/            Model registry, downloader, and cache
-  server/           HTTP server and API handlers (coming soon)
-  audio/            Audio decoding and preprocessing (coming soon)
-  worker/           Concurrent transcription worker pool (coming soon)
-docker/             Docker build files
-.github/workflows/  CI/CD pipelines
+  api/              HTTP server, routes, handlers, middleware
+  audio/            Audio decoding (WAV, MP3, FLAC, OGG) and resampling
+  config/           Configuration management (flags, env vars)
+  engine/           Transcription engine interface (sherpa-onnx, auto-routing)
+  format/           Output formatting (JSON, verbose_json, text, SRT, VTT)
+  metrics/          Prometheus metrics instrumentation
+  model/            Model registry, HuggingFace downloader, and cache
+  pipeline/         Audio pipeline (VAD, chunking, stitching)
+  queue/            Bounded concurrency job queue
+docker/             Docker build files (CPU + GPU)
+.github/workflows/  CI/CD pipelines (lint, test, release)
 ```
 
 ## Development

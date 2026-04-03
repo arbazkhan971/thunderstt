@@ -15,6 +15,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/arbaz/thunderstt/internal/config"
+	"github.com/arbaz/thunderstt/internal/metrics"
 	"github.com/arbaz/thunderstt/internal/pipeline"
 	"github.com/arbaz/thunderstt/internal/queue"
 )
@@ -82,6 +83,9 @@ func NewServer(p *pipeline.Pipeline, cfg *config.Config) *Server {
 		cfg:      scfg,
 		queue:    queue.NewQueue(cfg.Workers),
 	}
+
+	// Record queue capacity metric.
+	metrics.QueueCapacity.Set(float64(cfg.Workers))
 
 	// Global middleware stack (order matters).
 	s.router.Use(RequestID)

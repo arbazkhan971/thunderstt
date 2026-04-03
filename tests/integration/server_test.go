@@ -460,6 +460,53 @@ func TestIntegration_Concurrent_Transcribe(t *testing.T) {
 	}
 }
 
+func TestIntegration_Translate_Success(t *testing.T) {
+	ts := newTestServer(t)
+
+	body, contentType := buildTranscribeRequest(t, map[string]string{
+		"model": "auto", "response_format": "json",
+	})
+
+	resp, err := http.Post(ts.URL+"/v1/audio/translations", contentType, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+}
+
+func TestIntegration_Translate_NoFile(t *testing.T) {
+	ts := newTestServer(t)
+	resp, err := http.Post(ts.URL+"/v1/audio/translations", "application/json", bytes.NewBufferString("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 400 {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestIntegration_Version(t *testing.T) {
+	ts := newTestServer(t)
+	resp, err := http.Get(ts.URL + "/version")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body)
+	if _, ok := body["go_version"]; !ok {
+		t.Fatal("expected go_version field")
+	}
+}
+
 // createMinimalWAV writes a valid WAV file with silence.
 func createMinimalWAV(t *testing.T, path string) {
 	t.Helper()

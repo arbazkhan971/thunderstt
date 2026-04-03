@@ -50,10 +50,15 @@ type ServerConfig struct {
 }
 
 // DefaultServerConfig returns a ServerConfig with sensible defaults.
+// If cfg.MaxFileSize is set (> 0) it overrides the default 25 MB limit.
 func DefaultServerConfig(cfg *config.Config) *ServerConfig {
+	maxFile := int64(25 * 1024 * 1024) // 25 MB
+	if cfg.MaxFileSize > 0 {
+		maxFile = cfg.MaxFileSize
+	}
 	return &ServerConfig{
 		Config:          cfg,
-		MaxFileSize:     25 * 1024 * 1024, // 25 MB
+		MaxFileSize:     maxFile,
 		ReadTimeout:     30 * time.Second,
 		WriteTimeout:    5 * time.Minute, // transcription can take a while
 		IdleTimeout:     120 * time.Second,
@@ -92,8 +97,21 @@ func NewServer(p *pipeline.Pipeline, cfg *config.Config) *Server {
 	s.router.Use(Logging)
 	s.router.Use(Recovery)
 	s.router.Use(CORS)
-	// Rate limiting: 100 requests/sec per IP with burst of 200.
-	s.router.Use(RateLimit(100, 200))
+	s.router.Use(BearerAuth(cfg.APIKey))
+	// Rate limiting: use configured values; skip if RateLimit is 0 (disabled).
+	rateVal := cfg.RateLimit
+	burstVal := cfg.RateBurst
+	if rateVal == 0 && burstVal == 0 {
+		// Neither value configured — apply defaults.
+		rateVal = 100
+		burstVal = 200
+	}
+	if rateVal > 0 {
+		if burstVal <= 0 {
+			burstVal = int(rateVal) * 2
+		}
+		s.router.Use(RateLimit(rateVal, burstVal))
+	}
 	s.router.Use(MaxBodySize(scfg.MaxFileSize))
 	s.router.Use(RequestTimeout(scfg.RequestTimeout))
 

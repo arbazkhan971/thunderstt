@@ -13,9 +13,10 @@ type errorResponse struct {
 }
 
 type errorDetail struct {
-	Message string `json:"message"`
-	Type    string `json:"type"`
-	Code    string `json:"code,omitempty"`
+	Message   string `json:"message"`
+	Type      string `json:"type"`
+	Code      string `json:"code,omitempty"`
+	RequestID string `json:"request_id,omitempty"`
 }
 
 // WriteJSON serialises data as JSON and writes it to the response with the
@@ -39,6 +40,26 @@ func WriteErrorWithCode(w http.ResponseWriter, status int, code string, message 
 			Message: message,
 			Type:    httpStatusToErrorType(status),
 			Code:    code,
+		},
+	}
+
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		log.Error().Err(err).Msg("failed to encode error response")
+	}
+}
+
+// WriteErrorWithRequest writes a structured error response that includes
+// the request ID from the context for correlation.
+func WriteErrorWithRequest(w http.ResponseWriter, r *http.Request, status int, code string, message string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+
+	resp := errorResponse{
+		Error: errorDetail{
+			Message:   message,
+			Type:      httpStatusToErrorType(status),
+			Code:      code,
+			RequestID: GetRequestID(r.Context()),
 		},
 	}
 

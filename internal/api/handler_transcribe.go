@@ -25,12 +25,12 @@ func (s *Server) HandleTranscribe(w http.ResponseWriter, r *http.Request) {
 	maxBytes := s.maxFileSize()
 	if err := r.ParseMultipartForm(maxBytes); err != nil {
 		if strings.Contains(err.Error(), "http: request body too large") {
-			WriteErrorWithCode(w, http.StatusRequestEntityTooLarge, "file_too_large",
+			WriteErrorWithRequest(w, r, http.StatusRequestEntityTooLarge, "file_too_large",
 				"file size exceeds the maximum allowed size")
 			return
 		}
 		logger.Warn().Err(err).Msg("failed to parse multipart form")
-		WriteErrorWithCode(w, http.StatusBadRequest, "invalid_request", "failed to parse multipart form: "+err.Error())
+		WriteErrorWithRequest(w, r, http.StatusBadRequest, "invalid_request", "failed to parse multipart form: "+err.Error())
 		return
 	}
 	defer func() {
@@ -58,7 +58,7 @@ func (s *Server) HandleTranscribe(w http.ResponseWriter, r *http.Request) {
 
 	// Validate the pipeline is ready.
 	if s.pipeline == nil || !s.pipeline.Ready() {
-		WriteErrorWithCode(w, http.StatusServiceUnavailable, "model_not_ready", "model is not loaded; server is not ready")
+		WriteErrorWithRequest(w, r, http.StatusServiceUnavailable, "model_not_ready", "model is not loaded; server is not ready")
 		return
 	}
 
@@ -92,12 +92,12 @@ func (s *Server) HandleTranscribe(w http.ResponseWriter, r *http.Request) {
 		if ctx.Err() != nil {
 			metrics.TranscriptionTotal.WithLabelValues(req.Model, "error").Inc()
 			logger.Warn().Err(err).Msg("transcription cancelled")
-			WriteErrorWithCode(w, http.StatusServiceUnavailable, "timeout", "request cancelled or timed out")
+			WriteErrorWithRequest(w, r, http.StatusServiceUnavailable, "timeout", "request cancelled or timed out")
 			return
 		}
 		metrics.TranscriptionTotal.WithLabelValues(req.Model, "error").Inc()
 		logger.Error().Err(err).Msg("transcription failed")
-		WriteErrorWithCode(w, http.StatusInternalServerError, "transcription_error", "transcription failed: "+err.Error())
+		WriteErrorWithRequest(w, r, http.StatusInternalServerError, "transcription_error", "transcription failed: "+err.Error())
 		return
 	}
 

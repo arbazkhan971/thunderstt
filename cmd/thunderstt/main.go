@@ -59,11 +59,14 @@ Prometheus metrics, and structured JSON logging.`,
 
 func newServeCmd() *cobra.Command {
 	var (
-		host     string
-		port     int
-		model    string
-		workers  int
-		logLevel string
+		host        string
+		port        int
+		model       string
+		workers     int
+		logLevel    string
+		maxFileSize int64
+		rateLimit   float64
+		apiKey      string
 	)
 
 	cmd := &cobra.Command{
@@ -74,6 +77,16 @@ submitting audio files and retrieving transcription results. Configuration
 can also be provided through environment variables (THUNDERSTT_*).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := config.NewFromServeFlags(host, port, model, workers, logLevel)
+			// Apply additional config from flags (override env defaults).
+			if cmd.Flags().Changed("max-file-size") {
+				cfg.MaxFileSize = maxFileSize
+			}
+			if cmd.Flags().Changed("rate-limit") {
+				cfg.RateLimit = rateLimit
+			}
+			if cmd.Flags().Changed("api-key") {
+				cfg.APIKey = apiKey
+			}
 			setupLogging(cfg.LogLevel)
 
 			if err := cfg.Validate(); err != nil {
@@ -85,6 +98,8 @@ can also be provided through environment variables (THUNDERSTT_*).`,
 				Int("port", cfg.Port).
 				Str("model", cfg.Model).
 				Int("workers", cfg.Workers).
+				Float64("rate_limit", cfg.RateLimit).
+				Bool("auth_enabled", cfg.APIKey != "").
 				Msg("starting server")
 
 			// Download model if not already cached.
@@ -119,6 +134,9 @@ can also be provided through environment variables (THUNDERSTT_*).`,
 	cmd.Flags().StringVar(&model, "model", "base", "whisper model to load (tiny, base, small, medium, large)")
 	cmd.Flags().IntVar(&workers, "workers", runtime.NumCPU(), "number of concurrent transcription workers")
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level (trace, debug, info, warn, error, fatal)")
+	cmd.Flags().Int64Var(&maxFileSize, "max-file-size", 25*1024*1024, "maximum upload file size in bytes")
+	cmd.Flags().Float64Var(&rateLimit, "rate-limit", 100, "maximum requests per second per IP (0 to disable)")
+	cmd.Flags().StringVar(&apiKey, "api-key", "", "API key for bearer token authentication (empty to disable)")
 
 	return cmd
 }

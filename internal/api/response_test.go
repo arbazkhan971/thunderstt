@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -134,6 +135,30 @@ func TestWriteErrorWithCode(t *testing.T) {
 	}
 	if resp.Error.Message != "slow down" {
 		t.Fatalf("expected message 'slow down', got %s", resp.Error.Message)
+	}
+}
+
+func TestWriteErrorWithRequest(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/test", nil)
+	ctx := context.WithValue(r.Context(), requestIDKey{}, "test-req-123")
+	r = r.WithContext(ctx)
+
+	WriteErrorWithRequest(w, r, http.StatusBadRequest, "invalid_input", "bad request")
+
+	var resp struct {
+		Error struct {
+			Message   string `json:"message"`
+			RequestID string `json:"request_id"`
+			Code      string `json:"code"`
+		} `json:"error"`
+	}
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Error.RequestID != "test-req-123" {
+		t.Fatalf("expected request_id test-req-123, got %s", resp.Error.RequestID)
+	}
+	if resp.Error.Code != "invalid_input" {
+		t.Fatalf("expected code invalid_input, got %s", resp.Error.Code)
 	}
 }
 

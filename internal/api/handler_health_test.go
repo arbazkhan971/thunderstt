@@ -43,6 +43,9 @@ func TestHandleHealth(t *testing.T) {
 	if body.Status != "ok" {
 		t.Errorf("expected status %q, got %q", "ok", body.Status)
 	}
+	if body.Uptime == "" {
+		t.Error("expected uptime field to be present")
+	}
 }
 
 func TestHandleReady_NotReady(t *testing.T) {
@@ -69,6 +72,9 @@ func TestHandleReady_NotReady(t *testing.T) {
 	if body.Model != "" {
 		t.Errorf("expected empty model, got %q", body.Model)
 	}
+	if body.SystemInfo != nil {
+		t.Error("expected system info to be nil for not-ready response")
+	}
 }
 
 func TestHandleReady_Ready(t *testing.T) {
@@ -94,5 +100,20 @@ func TestHandleReady_Ready(t *testing.T) {
 	}
 	if body.Model != "whisper-tiny" {
 		t.Errorf("expected model %q, got %q", "whisper-tiny", body.Model)
+	}
+	if body.QueueMax != 1 {
+		t.Errorf("expected queue_capacity 1, got %d", body.QueueMax)
+	}
+	if body.SystemInfo == nil {
+		t.Fatal("expected system info to be present")
+	}
+	if body.SystemInfo.GoVersion == "" {
+		t.Error("expected go_version to be set")
+	}
+	if body.SystemInfo.NumCPU < 1 {
+		t.Errorf("expected num_cpu >= 1, got %d", body.SystemInfo.NumCPU)
+	}
+	if body.SystemInfo.NumGoroutine < 1 {
+		t.Errorf("expected num_goroutine >= 1, got %d", body.SystemInfo.NumGoroutine)
 	}
 }

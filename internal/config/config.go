@@ -42,6 +42,10 @@ type Config struct {
 
 	// RateBurst is the burst capacity for the rate limiter. Default: 200.
 	RateBurst int
+
+	// APIKey is an optional bearer token for authenticating API requests.
+	// When empty, authentication is disabled. Set via THUNDERSTT_API_KEY.
+	APIKey string
 }
 
 // Defaults used when neither flags nor environment variables are set.
@@ -82,6 +86,7 @@ func NewFromServeFlags(host string, port int, model string, workers int, logLeve
 	cfg.MaxFileSize = envInt64OrDefault("THUNDERSTT_MAX_FILE_SIZE", DefaultMaxFileSize)
 	cfg.RateLimit = envFloat64OrDefault("THUNDERSTT_RATE_LIMIT", DefaultRateLimit)
 	cfg.RateBurst = envIntOrDefault("THUNDERSTT_RATE_BURST", DefaultRateBurst)
+	cfg.APIKey = envOrDefault("THUNDERSTT_API_KEY", "")
 
 	// Override zero / empty values from env.
 	if cfg.Host == "" {
@@ -117,6 +122,7 @@ func NewFromEnv() *Config {
 		MaxFileSize: envInt64OrDefault("THUNDERSTT_MAX_FILE_SIZE", DefaultMaxFileSize),
 		RateLimit:   envFloat64OrDefault("THUNDERSTT_RATE_LIMIT", DefaultRateLimit),
 		RateBurst:   envIntOrDefault("THUNDERSTT_RATE_BURST", DefaultRateBurst),
+		APIKey:      envOrDefault("THUNDERSTT_API_KEY", ""),
 	}
 }
 

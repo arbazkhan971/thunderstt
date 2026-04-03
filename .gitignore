@@ -1,1 +1,33 @@
+# Binaries
+bin/
+thunderstt
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+coverage.out
+*.test
+*.prof
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Build
+dist/
+vendor/
+
+# Godmode logs (local only)
+.godmode/
+
+# Models cache
+models/

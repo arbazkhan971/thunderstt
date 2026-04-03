@@ -89,9 +89,6 @@ func (se *SherpaEngine) buildConfig() (*sherpa.OfflineRecognizerConfig, error) {
 	config.ModelConfig.Debug = 0
 	config.ModelConfig.Provider = "cpu"
 
-	// TODO: verify token file naming convention across model versions.
-	config.ModelConfig.Tokens = filepath.Join(se.modelPath, "tokens.txt")
-
 	return config, nil
 }
 
@@ -102,6 +99,7 @@ func (se *SherpaEngine) configureParakeet(config *sherpa.OfflineRecognizerConfig
 	config.ModelConfig.TransducerConfig.Decoder = filepath.Join(se.modelPath, "decoder.onnx")
 	config.ModelConfig.TransducerConfig.Joiner = filepath.Join(se.modelPath, "joiner.onnx")
 	config.ModelConfig.ModelType = "nemo_transducer"
+	config.ModelConfig.Tokens = filepath.Join(se.modelPath, "tokens.txt")
 }
 
 // configureWhisper populates the Whisper-specific fields within the
@@ -115,6 +113,18 @@ func (se *SherpaEngine) configureWhisper(config *sherpa.OfflineRecognizerConfig)
 	config.ModelConfig.Whisper.Language = "en"
 	config.ModelConfig.Whisper.Task = "transcribe"
 	config.ModelConfig.ModelType = "whisper"
+	config.ModelConfig.Tokens = se.findTokensFile()
+}
+
+// findTokensFile looks for a tokens file in the model directory.
+// Whisper models use versioned names like "large-v3-turbo-tokens.txt"
+// while Parakeet models use plain "tokens.txt".
+func (se *SherpaEngine) findTokensFile() string {
+	matches, err := filepath.Glob(filepath.Join(se.modelPath, "*-tokens.txt"))
+	if err == nil && len(matches) > 0 {
+		return matches[0]
+	}
+	return filepath.Join(se.modelPath, "tokens.txt")
 }
 
 // Transcribe implements Engine. It feeds audio samples through the sherpa-onnx

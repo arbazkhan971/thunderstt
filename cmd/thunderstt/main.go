@@ -14,7 +14,7 @@ import (
 	"github.com/arbaz/thunderstt/internal/config"
 	"github.com/arbaz/thunderstt/internal/engine"
 	"github.com/arbaz/thunderstt/internal/format"
-	"github.com/arbaz/thunderstt/internal/model"
+	modelPkg "github.com/arbaz/thunderstt/internal/model"
 	"github.com/arbaz/thunderstt/internal/pipeline"
 )
 
@@ -87,9 +87,24 @@ can also be provided through environment variables (THUNDERSTT_*).`,
 				Int("workers", cfg.Workers).
 				Msg("starting server")
 
-			// Use a NoopEngine as a placeholder since we cannot load sherpa
-			// without CGo. Replace with a real engine when CGo is available.
-			eng := engine.NewNoopEngine(cfg.Model)
+			// Download model if not already cached.
+			modelPath, err := modelPkg.EnsureModel(cfg.Model)
+			if err != nil {
+				return fmt.Errorf("failed to ensure model: %w", err)
+			}
+
+			// Try to load a real engine; fall back to noop for non-CGO builds.
+			var eng engine.Engine
+			if engine.HasEngine(cfg.Model) {
+				eng, err = engine.GetEngine(cfg.Model, modelPath)
+				if err != nil {
+					return fmt.Errorf("failed to load engine: %w", err)
+				}
+				log.Info().Str("model", cfg.Model).Msg("engine loaded")
+			} else {
+				log.Warn().Str("model", cfg.Model).Msg("no native engine registered (CGO disabled?); using noop engine")
+				eng = engine.NewNoopEngine(cfg.Model)
+			}
 
 			p := pipeline.New(eng)
 			defer p.Close()
@@ -147,8 +162,24 @@ is printed to stdout in the requested format.`,
 				return fmt.Errorf("cannot access audio file: %w", err)
 			}
 
-			// Use a NoopEngine as a placeholder (no CGo required).
-			eng := engine.NewNoopEngine(model)
+			// Download model if not already cached.
+			modelPath, err := modelPkg.EnsureModel(model)
+			if err != nil {
+				return fmt.Errorf("failed to ensure model: %w", err)
+			}
+
+			// Try to load a real engine; fall back to noop for non-CGO builds.
+			var eng engine.Engine
+			if engine.HasEngine(model) {
+				eng, err = engine.GetEngine(model, modelPath)
+				if err != nil {
+					return fmt.Errorf("failed to load engine: %w", err)
+				}
+				log.Info().Str("model", model).Msg("engine loaded")
+			} else {
+				log.Warn().Str("model", model).Msg("no native engine registered (CGO disabled?); using noop engine")
+				eng = engine.NewNoopEngine(model)
+			}
 
 			pipelineCfg := pipeline.PipelineConfig{
 				WordTimestamps: wordTimestamps,
@@ -213,7 +244,11 @@ with the THUNDERSTT_MODELS_DIR environment variable.`,
 				Str("models_dir", cfg.ModelsDir).
 				Msg("downloading model...")
 
-			fmt.Printf("downloading model=%s to %s\n", modelName, cfg.ModelsDir)
+			modelDir, err := modelPkg.EnsureModel(modelName)
+			if err != nil {
+				return fmt.Errorf("download failed: %w", err)
+			}
+			fmt.Printf("model %s ready at %s\n", modelName, modelDir)
 			return nil
 		},
 	}
@@ -230,7 +265,7 @@ func newModelsCmd() *cobra.Command {
 		Use:   "models",
 		Short: "List available whisper models",
 		Run: func(cmd *cobra.Command, args []string) {
-			models := model.ListModels()
+			models := modelPkg.ListModels()
 
 			fmt.Println("Available models:")
 			fmt.Println()

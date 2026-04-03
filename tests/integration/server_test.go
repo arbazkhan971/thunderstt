@@ -3,12 +3,15 @@ package integration
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/arbaz/thunderstt/internal/api"
@@ -195,6 +198,265 @@ func TestIntegration_CORS_Preflight(t *testing.T) {
 	}
 	if resp.Header.Get("Access-Control-Allow-Origin") != "*" {
 		t.Fatal("missing CORS header")
+	}
+}
+
+// newTestServerWithRateLimit creates a test server with a custom rate limit.
+func newTestServerWithRateLimit(t *testing.T, rate float64, burst int) *httptest.Server {
+	t.Helper()
+	cfg := &config.Config{
+		Host:      "127.0.0.1",
+		Port:      0,
+		Model:     "test-noop",
+		Workers:   2,
+		LogLevel:  "error",
+		ModelsDir: t.TempDir(),
+		RateLimit: rate,
+		RateBurst: burst,
+	}
+	eng := engine.NewNoopEngine("test-noop")
+	p := pipeline.New(eng)
+	t.Cleanup(func() { p.Close() })
+
+	srv := api.NewServer(p, cfg)
+	ts := httptest.NewServer(srv.Router())
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+// buildTranscribeRequest creates a multipart body for the transcribe endpoint
+// with the given form fields. The "file" field is always populated with a
+// minimal WAV file.
+func buildTranscribeRequest(t *testing.T, fields map[string]string) (*bytes.Buffer, string) {
+	t.Helper()
+	wavPath := filepath.Join(t.TempDir(), "test.wav")
+	createMinimalWAV(t, wavPath)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "test.wav")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(wavPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(part, f)
+	f.Close()
+	for k, v := range fields {
+		writer.WriteField(k, v)
+	}
+	writer.Close()
+	return &body, writer.FormDataContentType()
+}
+
+func TestIntegration_Transcribe_AllFormats(t *testing.T) {
+	ts := newTestServer(t)
+
+	formats := []struct {
+		name        string
+		contentType string
+	}{
+		{"json", "application/json"},
+		{"verbose_json", "application/json"},
+		{"text", "text/plain"},
+		{"srt", "text/plain"},
+		{"vtt", "text/plain"},
+	}
+
+	for _, fmt := range formats {
+		t.Run(fmt.name, func(t *testing.T) {
+			wavPath := filepath.Join(t.TempDir(), "test.wav")
+			createMinimalWAV(t, wavPath)
+
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			part, _ := writer.CreateFormFile("file", "test.wav")
+			f, _ := os.Open(wavPath)
+			io.Copy(part, f)
+			f.Close()
+			writer.WriteField("model", "auto")
+			writer.WriteField("response_format", fmt.name)
+			writer.Close()
+
+			resp, err := http.Post(ts.URL+"/v1/audio/transcriptions", writer.FormDataContentType(), &body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != 200 {
+				bodyBytes, _ := io.ReadAll(resp.Body)
+				t.Fatalf("format %s: expected 200, got %d: %s", fmt.name, resp.StatusCode, string(bodyBytes))
+			}
+
+			// Verify the Content-Type header matches expectations.
+			ct := resp.Header.Get("Content-Type")
+			if !bytes.Contains([]byte(ct), []byte(fmt.contentType)) {
+				t.Errorf("format %s: expected Content-Type containing %q, got %q", fmt.name, fmt.contentType, ct)
+			}
+		})
+	}
+}
+
+func TestIntegration_Transcribe_WithLanguage(t *testing.T) {
+	ts := newTestServer(t)
+
+	body, contentType := buildTranscribeRequest(t, map[string]string{
+		"model":           "auto",
+		"language":        "en",
+		"response_format": "json",
+	})
+
+	resp, err := http.Post(ts.URL+"/v1/audio/transcriptions", contentType, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode JSON response: %v", err)
+	}
+	// The response should at least contain a "text" field.
+	if _, ok := result["text"]; !ok {
+		t.Fatal("expected \"text\" field in JSON response")
+	}
+}
+
+func TestIntegration_Transcribe_WithWordTimestamps(t *testing.T) {
+	ts := newTestServer(t)
+
+	wavPath := filepath.Join(t.TempDir(), "test.wav")
+	createMinimalWAV(t, wavPath)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "test.wav")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(wavPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(part, f)
+	f.Close()
+	writer.WriteField("model", "auto")
+	writer.WriteField("response_format", "verbose_json")
+	writer.WriteField("timestamp_granularities[]", "word")
+	writer.Close()
+
+	resp, err := http.Post(ts.URL+"/v1/audio/transcriptions", writer.FormDataContentType(), &body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// Decode and check we got a valid verbose_json response.
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode verbose_json response: %v", err)
+	}
+	if _, ok := result["text"]; !ok {
+		t.Fatal("expected \"text\" field in verbose_json response")
+	}
+}
+
+func TestIntegration_NotFound(t *testing.T) {
+	ts := newTestServer(t)
+
+	paths := []string{
+		"/nonexistent",
+		"/v1/nonexistent",
+		"/v2/audio/transcriptions",
+		"/foo/bar/baz",
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			resp, err := http.Get(ts.URL + path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			// chi returns 404 or 405 for unmatched routes.
+			if resp.StatusCode != 404 && resp.StatusCode != 405 {
+				t.Fatalf("path %s: expected 404 or 405, got %d", path, resp.StatusCode)
+			}
+		})
+	}
+}
+
+func TestIntegration_RateLimit(t *testing.T) {
+	// Create a server with a very low rate limit so we can trigger 429 quickly.
+	ts := newTestServerWithRateLimit(t, 5, 5)
+
+	var got429 atomic.Bool
+	// Send 300 rapid requests to /health.
+	for i := 0; i < 300; i++ {
+		resp, err := http.Get(ts.URL + "/health")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusTooManyRequests {
+			got429.Store(true)
+			break
+		}
+	}
+
+	if !got429.Load() {
+		t.Fatal("expected at least one 429 Too Many Requests response after 300 rapid requests")
+	}
+}
+
+func TestIntegration_Concurrent_Transcribe(t *testing.T) {
+	ts := newTestServer(t)
+
+	const numRequests = 10
+	var wg sync.WaitGroup
+	wg.Add(numRequests)
+
+	errors := make(chan error, numRequests)
+
+	for i := 0; i < numRequests; i++ {
+		go func() {
+			defer wg.Done()
+
+			body, contentType := buildTranscribeRequest(t, map[string]string{
+				"model":           "auto",
+				"response_format": "json",
+			})
+
+			resp, err := http.Post(ts.URL+"/v1/audio/transcriptions", contentType, body)
+			if err != nil {
+				errors <- err
+				return
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != 200 {
+				bodyBytes, _ := io.ReadAll(resp.Body)
+				errors <- fmt.Errorf("expected 200, got %d: %s", resp.StatusCode, string(bodyBytes))
+				return
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errors)
+
+	for err := range errors {
+		t.Errorf("concurrent request failed: %v", err)
 	}
 }
 

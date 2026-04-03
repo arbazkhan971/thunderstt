@@ -46,13 +46,34 @@ jobs:
           go-version: "1.22"
           cache: true
 
+      - name: Run go vet
+        run: CGO_ENABLED=0 go vet ./...
+
       # Run tests without CGO to skip sherpa-onnx integration tests in CI.
       # Files guarded by //go:build cgo will be excluded automatically.
       - name: Run unit tests
         run: |
-          CGO_ENABLED=0 go test -race -count=1 -coverprofile=coverage.out \
+          CGO_ENABLED=0 go test -count=1 \
+            -coverprofile=coverage.out -covermode=atomic \
             -tags=!cgo \
             ./...
+
+      - name: Run integration tests
+        run: |
+          CGO_ENABLED=0 go test -count=1 \
+            -coverprofile=coverage-integration.out -covermode=atomic \
+            ./tests/integration/...
+
+      - name: Merge coverage profiles
+        run: |
+          # Merge unit and integration coverage into a single file
+          head -1 coverage.out > coverage-merged.out
+          tail -n +2 coverage.out >> coverage-merged.out
+          tail -n +2 coverage-integration.out >> coverage-merged.out
+          mv coverage-merged.out coverage.out
+
+      - name: Print coverage summary
+        run: go tool cover -func=coverage.out
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest'

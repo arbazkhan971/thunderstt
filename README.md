@@ -5,25 +5,31 @@ Lightning-fast speech-to-text server powered by sherpa-onnx and NVIDIA NeMo Para
 ## Features
 
 - **OpenAI-compatible API** -- drop-in replacement for `/v1/audio/transcriptions`
+- **Translation endpoint** -- `/v1/audio/translations` for speech-to-English translation
+- **WebSocket streaming** -- real-time transcription via `/v1/audio/stream`
 - **Multiple model support** -- Parakeet TDT, Whisper Large V3 Turbo, and more
 - **High performance** -- concurrent worker pool with sherpa-onnx inference
 - **Voice Activity Detection** -- built-in Silero VAD to skip silence and reduce hallucinations
 - **Multiple output formats** -- text, JSON, SRT, VTT with word-level timestamps
 - **Automatic model management** -- downloads models from HuggingFace Hub on first use
 - **GPU acceleration** -- optional CUDA support via NVIDIA container images
+- **Rate limiting** -- per-client request throttling to protect shared deployments
+- **API key authentication** -- optional bearer-token auth via `--api-key`
+- **Prometheus metrics** -- `/metrics` endpoint for monitoring and alerting
+- **Go SDK** -- first-party client library at `pkg/thunderstt`
 - **CLI and server modes** -- transcribe files locally or run as an HTTP service
-- **Structured logging** -- JSON logs with zerolog, Prometheus-ready metrics
+- **Structured logging** -- JSON logs with zerolog
 - **Small footprint** -- single binary, minimal dependencies
 
 ## Quick Start
 
 ### Using a pre-built binary
 
-Download the latest release from the [Releases](https://github.com/arbaz/thunderstt/releases) page.
+Download the latest release from the [Releases](https://github.com/arbazkhan971/thunderstt/releases) page.
 
 ```bash
 # Download and extract (example for Linux amd64)
-curl -L https://github.com/arbaz/thunderstt/releases/latest/download/thunderstt_linux_amd64.tar.gz | tar xz
+curl -L https://github.com/arbazkhan971/thunderstt/releases/latest/download/thunderstt_linux_amd64.tar.gz | tar xz
 
 # Start the server (downloads the default model on first run)
 ./thunderstt serve --model parakeet-tdt-0.6b-v3 --port 8000
@@ -35,12 +41,12 @@ curl -L https://github.com/arbaz/thunderstt/releases/latest/download/thunderstt_
 # CPU
 docker run --rm -p 8000:8000 \
     -v thunderstt-models:/root/.cache/thunderstt/models \
-    ghcr.io/arbaz/thunderstt:latest
+    ghcr.io/arbazkhan971/thunderstt:latest
 
 # GPU (requires NVIDIA Container Toolkit)
 docker run --rm --gpus all -p 8000:8000 \
     -v thunderstt-models:/root/.cache/thunderstt/models \
-    ghcr.io/arbaz/thunderstt:latest-gpu
+    ghcr.io/arbazkhan971/thunderstt:latest-gpu
 ```
 
 ### Using Docker Compose
@@ -53,7 +59,7 @@ docker compose up -d
 ### From source
 
 ```bash
-git clone https://github.com/arbaz/thunderstt.git
+git clone https://github.com/arbazkhan971/thunderstt.git
 cd thunderstt
 make build
 ./bin/thunderstt serve --model parakeet-tdt-0.6b-v3
@@ -90,11 +96,48 @@ curl -X POST http://localhost:8000/v1/audio/transcriptions \
 curl http://localhost:8000/v1/models
 ```
 
+### Translate audio to English
+
+```bash
+curl -X POST http://localhost:8000/v1/audio/translations \
+    -F "file=@audio.mp3" \
+    -F "model=whisper-large-v3-turbo"
+```
+
+### WebSocket streaming
+
+Connect to `ws://localhost:8000/v1/audio/stream` and send raw PCM audio frames. The server streams back partial transcription results as JSON messages. See `docs/` for the full protocol spec.
+
 ### Health check
 
 ```bash
 curl http://localhost:8000/health
 ```
+
+### Metrics
+
+```bash
+curl http://localhost:8000/metrics
+```
+
+### Version
+
+```bash
+curl http://localhost:8000/version
+```
+
+### API endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/v1/audio/transcriptions` | Transcribe audio file |
+| POST | `/v1/audio/translations` | Translate audio to English |
+| GET | `/v1/audio/stream` | WebSocket streaming transcription |
+| GET | `/v1/models` | List available models |
+| GET | `/health` | Liveness check |
+| GET | `/ready` | Readiness check |
+| GET | `/version` | Server version info |
+| GET | `/metrics` | Prometheus metrics |
 
 ### Response formats
 
@@ -115,7 +158,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://localhost:8000/v1",
-    api_key="not-needed",  # ThunderSTT does not require auth by default
+    api_key="your-key",  # omit if auth is not enabled
 )
 
 with open("recording.wav", "rb") as audio_file:
@@ -129,6 +172,20 @@ with open("recording.wav", "rb") as audio_file:
 print(transcript.text)
 for word in transcript.words:
     print(f"  [{word.start:.2f} - {word.end:.2f}] {word.word}")
+```
+
+## Go SDK
+
+ThunderSTT ships a Go client library under `pkg/thunderstt`:
+
+```go
+import "github.com/arbazkhan971/thunderstt/pkg/thunderstt"
+
+client := thunderstt.NewClient("http://localhost:8000", thunderstt.WithAPIKey("your-key"))
+resp, err := client.Transcribe(thunderstt.TranscribeRequest{
+    FilePath: "recording.wav",
+    Model:    "parakeet-tdt-0.6b-v3",
+})
 ```
 
 ## CLI Usage
@@ -183,6 +240,9 @@ All configuration can be set via CLI flags or environment variables. Environment
 | `--model` | `THUNDERSTT_MODEL` | `base` | Model to load |
 | `--workers` | `THUNDERSTT_WORKERS` | CPU count | Number of concurrent workers |
 | `--log-level` | `THUNDERSTT_LOG_LEVEL` | `info` | Log level (trace, debug, info, warn, error) |
+| `--api-key` | `THUNDERSTT_API_KEY` | *(none)* | Require this bearer token for all requests |
+| `--rate-limit` | `THUNDERSTT_RATE_LIMIT` | `0` (unlimited) | Max requests per minute per client |
+| `--max-file-size` | `THUNDERSTT_MAX_FILE_SIZE` | `25MB` | Maximum upload file size |
 | -- | `THUNDERSTT_MODELS_DIR` | `~/.cache/thunderstt/models` | Model cache directory |
 
 ## Supported Models
@@ -223,6 +283,8 @@ internal/
   model/            Model registry, HuggingFace downloader, and cache
   pipeline/         Audio pipeline (VAD, chunking, stitching)
   queue/            Bounded concurrency job queue
+pkg/thunderstt/     Go SDK client library
+deploy/helm/        Helm chart for Kubernetes deployment
 docker/             Docker build files (CPU + GPU)
 .github/workflows/  CI/CD pipelines (lint, test, release)
 ```
@@ -241,6 +303,22 @@ make lint
 
 # Build Docker image
 make docker-build
+```
+
+## Kubernetes
+
+Deploy with Helm:
+
+```bash
+helm install thunderstt deploy/helm/thunderstt/
+```
+
+Override values as needed:
+
+```bash
+helm install thunderstt deploy/helm/thunderstt/ \
+    --set model=whisper-large-v3-turbo \
+    --set replicaCount=3
 ```
 
 ## License

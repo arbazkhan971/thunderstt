@@ -167,3 +167,47 @@ func TestClient_Transcribe_serverError(t *testing.T) {
 		t.Fatal("expected error on 500")
 	}
 }
+
+func TestClient_Version(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/version" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		json.NewEncoder(w).Encode(VersionResponse{
+			Version: "1.0.0", GoVersion: "go1.23", OS: "darwin", Arch: "arm64",
+		})
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL)
+	resp, err := c.Version()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Version != "1.0.0" {
+		t.Fatalf("expected 1.0.0, got %s", resp.Version)
+	}
+}
+
+func TestClient_Translate(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/audio/translations" {
+			t.Fatalf("expected translations path, got %s", r.URL.Path)
+		}
+		json.NewEncoder(w).Encode(TranscribeResponse{Text: "translated text"})
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL)
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "test.wav")
+	os.WriteFile(tmpFile, []byte("fake audio"), 0644)
+
+	resp, err := c.Translate(TranscribeRequest{FilePath: tmpFile})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Text != "translated text" {
+		t.Fatalf("expected 'translated text', got %s", resp.Text)
+	}
+}

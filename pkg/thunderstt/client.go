@@ -113,8 +113,28 @@ type HealthResponse struct {
 	Uptime string `json:"uptime,omitempty"`
 }
 
+// VersionResponse is the response from the version endpoint.
+type VersionResponse struct {
+	Version   string `json:"version"`
+	Commit    string `json:"commit,omitempty"`
+	BuildDate string `json:"build_date,omitempty"`
+	GoVersion string `json:"go_version"`
+	OS        string `json:"os"`
+	Arch      string `json:"arch"`
+}
+
 // Transcribe sends an audio file for transcription.
 func (c *Client) Transcribe(req TranscribeRequest) (*TranscribeResponse, error) {
+	return c.doTranscription("/v1/audio/transcriptions", req)
+}
+
+// Translate sends an audio file for translation to English.
+func (c *Client) Translate(req TranscribeRequest) (*TranscribeResponse, error) {
+	return c.doTranscription("/v1/audio/translations", req)
+}
+
+// doTranscription builds a multipart request and posts it to the given endpoint.
+func (c *Client) doTranscription(endpoint string, req TranscribeRequest) (*TranscribeResponse, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
@@ -173,7 +193,7 @@ func (c *Client) Transcribe(req TranscribeRequest) (*TranscribeResponse, error) 
 
 	writer.Close()
 
-	httpReq, err := http.NewRequest("POST", c.BaseURL+"/v1/audio/transcriptions", &body)
+	httpReq, err := http.NewRequest("POST", c.BaseURL+endpoint, &body)
 	if err != nil {
 		return nil, fmt.Errorf("thunderstt: create request: %w", err)
 	}
@@ -192,6 +212,21 @@ func (c *Client) Transcribe(req TranscribeRequest) (*TranscribeResponse, error) 
 	}
 
 	var result TranscribeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("thunderstt: decode response: %w", err)
+	}
+	return &result, nil
+}
+
+// Version returns the server's version information.
+func (c *Client) Version() (*VersionResponse, error) {
+	resp, err := c.HTTPClient.Get(c.BaseURL + "/version")
+	if err != nil {
+		return nil, fmt.Errorf("thunderstt: version check: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result VersionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("thunderstt: decode response: %w", err)
 	}

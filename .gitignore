@@ -29,5 +29,8 @@ vendor/
 # Godmode logs (local only)
 .godmode/
 
+# Docs (local only, never push)
+docs/
+
 # Models cache
 models/

@@ -142,10 +142,14 @@ func TestNewFromServeFlags_ZeroValuesFallToEnv(t *testing.T) {
 
 func TestValidate_ValidConfig(t *testing.T) {
 	cfg := &Config{
-		Host:    "0.0.0.0",
-		Port:    8080,
-		Model:   "base",
-		Workers: 2,
+		Host:        "0.0.0.0",
+		Port:        8080,
+		Model:       "base",
+		Workers:     2,
+		LogLevel:    "info",
+		MaxFileSize: DefaultMaxFileSize,
+		RateLimit:   DefaultRateLimit,
+		RateBurst:   DefaultRateBurst,
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("Validate() returned error for valid config: %v", err)
@@ -266,5 +270,91 @@ func TestConfig_RateBurst_default(t *testing.T) {
 	want := 200
 	if cfg.RateBurst != want {
 		t.Errorf("RateBurst = %d, want %d", cfg.RateBurst, want)
+	}
+}
+
+func TestValidate_invalidLogLevel(t *testing.T) {
+	cfg := &Config{Port: 8080, Model: "base", Workers: 1, LogLevel: "verbose"}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for invalid LogLevel")
+	}
+	ve, ok := err.(*ValidationError)
+	if !ok {
+		t.Fatalf("expected *ValidationError, got %T", err)
+	}
+	if ve.Field != "LogLevel" {
+		t.Errorf("error field = %q, want %q", ve.Field, "LogLevel")
+	}
+}
+
+func TestValidate_negativeRateLimit(t *testing.T) {
+	cfg := &Config{Port: 8080, Model: "base", Workers: 1, LogLevel: "info", RateLimit: -1}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for negative RateLimit")
+	}
+	ve, ok := err.(*ValidationError)
+	if !ok {
+		t.Fatalf("expected *ValidationError, got %T", err)
+	}
+	if ve.Field != "RateLimit" {
+		t.Errorf("error field = %q, want %q", ve.Field, "RateLimit")
+	}
+}
+
+func TestValidate_negativeRateBurst(t *testing.T) {
+	cfg := &Config{Port: 8080, Model: "base", Workers: 1, LogLevel: "info", RateBurst: -1}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for negative RateBurst")
+	}
+	ve, ok := err.(*ValidationError)
+	if !ok {
+		t.Fatalf("expected *ValidationError, got %T", err)
+	}
+	if ve.Field != "RateBurst" {
+		t.Errorf("error field = %q, want %q", ve.Field, "RateBurst")
+	}
+}
+
+func TestValidate_validDisabledRateLimit(t *testing.T) {
+	cfg := &Config{
+		Port:     8080,
+		Model:    "base",
+		Workers:  1,
+		LogLevel: "info",
+		RateLimit: 0,
+		RateBurst: 0,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate() should pass with RateLimit=0 (disabled), got: %v", err)
+	}
+}
+
+func TestValidate_negativeMaxFileSize(t *testing.T) {
+	cfg := &Config{Port: 8080, Model: "base", Workers: 1, LogLevel: "info", MaxFileSize: -1}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for negative MaxFileSize")
+	}
+	ve, ok := err.(*ValidationError)
+	if !ok {
+		t.Fatalf("expected *ValidationError, got %T", err)
+	}
+	if ve.Field != "MaxFileSize" {
+		t.Errorf("error field = %q, want %q", ve.Field, "MaxFileSize")
+	}
+}
+
+func TestValidate_allLogLevels(t *testing.T) {
+	levels := []string{"trace", "debug", "info", "warn", "error", "fatal"}
+	for _, lvl := range levels {
+		t.Run(lvl, func(t *testing.T) {
+			cfg := &Config{Port: 8080, Model: "base", Workers: 1, LogLevel: lvl}
+			if err := cfg.Validate(); err != nil {
+				t.Errorf("Validate() should accept LogLevel %q, got: %v", lvl, err)
+			}
+		})
 	}
 }

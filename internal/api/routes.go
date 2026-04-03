@@ -21,6 +21,9 @@ func SetupRoutes(r chi.Router, s *Server) {
 		// Transcription endpoint (OpenAI-compatible).
 		v1.Post("/audio/transcriptions", s.HandleTranscribe)
 
+		// Translation endpoint (OpenAI-compatible).
+		v1.Post("/audio/translations", s.HandleTranslate)
+
 		// Model listing (OpenAI-compatible).
 		v1.Get("/models", s.HandleListModels)
 

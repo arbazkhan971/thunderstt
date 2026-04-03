@@ -126,6 +126,16 @@ func NewFromEnv() *Config {
 	}
 }
 
+// validLogLevels is the set of accepted log-level strings.
+var validLogLevels = map[string]bool{
+	"trace": true,
+	"debug": true,
+	"info":  true,
+	"warn":  true,
+	"error": true,
+	"fatal": true,
+}
+
 // Validate performs basic sanity checks on the configuration and returns an
 // error describing the first problem found, or nil if everything looks good.
 func (c *Config) Validate() error {
@@ -137,6 +147,18 @@ func (c *Config) Validate() error {
 	}
 	if c.Model == "" {
 		return &ValidationError{Field: "Model", Reason: "must not be empty"}
+	}
+	if c.MaxFileSize < 0 {
+		return &ValidationError{Field: "MaxFileSize", Reason: "must be >= 0"}
+	}
+	if c.RateLimit < 0 {
+		return &ValidationError{Field: "RateLimit", Reason: "must be >= 0"}
+	}
+	if c.RateBurst < 0 {
+		return &ValidationError{Field: "RateBurst", Reason: "must be >= 0"}
+	}
+	if c.LogLevel != "" && !validLogLevels[c.LogLevel] {
+		return &ValidationError{Field: "LogLevel", Reason: "must be one of trace, debug, info, warn, error, fatal"}
 	}
 	return nil
 }

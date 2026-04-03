@@ -11,6 +11,7 @@ func SetupRoutes(r chi.Router, s *Server) {
 	// Health and readiness probes (unversioned, no auth).
 	r.Get("/health", s.HandleHealth)
 	r.Get("/ready", s.HandleReady)
+	r.Get("/version", s.HandleVersion)
 
 	// Prometheus metrics endpoint.
 	r.Handle("/metrics", promhttp.Handler())

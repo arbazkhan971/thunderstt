@@ -128,11 +128,12 @@ func (s *Server) Start() error {
 	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
 
 	httpServer := &http.Server{
-		Addr:         addr,
-		Handler:      s.router,
-		ReadTimeout:  s.cfg.ReadTimeout,
-		WriteTimeout: s.cfg.WriteTimeout,
-		IdleTimeout:  s.cfg.IdleTimeout,
+		Addr:           addr,
+		Handler:        s.router,
+		ReadTimeout:    s.cfg.ReadTimeout,
+		WriteTimeout:   s.cfg.WriteTimeout,
+		IdleTimeout:    s.cfg.IdleTimeout,
+		MaxHeaderBytes: 1 << 20, // 1 MB max header size
 	}
 
 	// Channel to capture server errors.

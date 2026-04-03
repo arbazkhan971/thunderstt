@@ -69,6 +69,8 @@ func Logging(next http.Handler) http.Handler {
 			Int("bytes", ww.bytes).
 			Dur("duration", duration).
 			Str("remote_addr", r.RemoteAddr).
+			Str("user_agent", r.UserAgent()).
+			Int64("content_length", r.ContentLength).
 			Logger()
 
 		switch {

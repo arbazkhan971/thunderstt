@@ -48,6 +48,12 @@ func (s *Server) HandleTranscribe(w http.ResponseWriter, r *http.Request) {
 	}
 	defer req.File.Close()
 
+	// Validate the uploaded file has an audio extension.
+	if err := ValidateAudioFilename(req.FileHeader.Filename); err != nil {
+		WriteErrorWithRequest(w, r, http.StatusBadRequest, "invalid_file_type", err.Error())
+		return
+	}
+
 	logger.Info().
 		Str("filename", req.FileHeader.Filename).
 		Int64("size", req.FileHeader.Size).
@@ -120,6 +126,7 @@ func (s *Server) HandleTranscribe(w http.ResponseWriter, r *http.Request) {
 		Str("format", req.ResponseFormat).
 		Int("result_bytes", len(data)).
 		Float64("duration_secs", result.Duration).
+		Str("model", s.pipeline.ModelName()).
 		Msg("transcription completed")
 
 	WriteBytes(w, http.StatusOK, contentType, data)

@@ -121,6 +121,8 @@ can also be provided through environment variables (THUNDERSTT_*).`,
 				eng = engine.NewNoopEngine(cfg.Model)
 			}
 
+			api.SetVersionInfo(Version, Commit, BuildDate)
+
 			p := pipeline.New(eng)
 			defer p.Close()
 

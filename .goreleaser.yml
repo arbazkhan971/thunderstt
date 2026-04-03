@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: thunderstt
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: thunderstt
+    main: ./cmd/thunderstt
+    binary: thunderstt
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.Version={{ .Version }}
+      - -X main.Commit={{ .Commit }}
+      - -X main.BuildDate={{ .Date }}
+    # Cross-compilation with CGO requires appropriate C cross-compilers.
+    # On the GitHub Actions runner these are set up via environment variables.
+    overrides:
+      - goos: linux
+        goarch: amd64
+        env:
+          - CC=gcc
+          - CXX=g++
+      - goos: linux
+        goarch: arm64
+        env:
+          - CC=aarch64-linux-gnu-gcc
+          - CXX=aarch64-linux-gnu-g++
+      - goos: darwin
+        goarch: amd64
+        env:
+          - CC=o64-clang
+          - CXX=o64-clang++
+      - goos: darwin
+        goarch: arm64
+        env:
+          - CC=oa64-clang
+          - CXX=oa64-clang++
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: arbaz
+    name: thunderstt
+  draft: false
+  prerelease: auto
+  name_template: "v{{ .Version }}"
+  header: |
+    ## ThunderSTT {{ .Version }}
+
+    Lightning-fast speech-to-text server.
+  footer: |
+    ---
+    **Full Changelog**: https://github.com/arbaz/thunderstt/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+# Homebrew tap (optional -- uncomment and configure when ready).
+# brews:
+#   - repository:
+#       owner: arbaz
+#       name: homebrew-tap
+#     name: thunderstt
+#     homepage: https://github.com/arbaz/thunderstt
+#     description: Lightning-fast speech-to-text server
+#     license: MIT
+#     install: |
+#       bin.install "thunderstt"
+#     test: |
+#       system "#{bin}/thunderstt", "version"

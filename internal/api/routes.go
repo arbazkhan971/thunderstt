@@ -1,0 +1,22 @@
+package api
+
+import (
+	"github.com/go-chi/chi/v5"
+)
+
+// SetupRoutes registers all HTTP routes on the given chi router. The routes
+// follow the OpenAI API conventions for audio transcription.
+func SetupRoutes(r chi.Router, s *Server) {
+	// Health and readiness probes (unversioned, no auth).
+	r.Get("/health", s.HandleHealth)
+	r.Get("/ready", s.HandleReady)
+
+	// API v1 routes.
+	r.Route("/v1", func(v1 chi.Router) {
+		// Transcription endpoint (OpenAI-compatible).
+		v1.Post("/audio/transcriptions", s.HandleTranscribe)
+
+		// Model listing (OpenAI-compatible).
+		v1.Get("/models", s.HandleListModels)
+	})
+}

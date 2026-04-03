@@ -1,0 +1,52 @@
+version: "3.8"
+
+services:
+  thunderstt:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: thunderstt:latest
+    container_name: thunderstt
+    ports:
+      - "8000:8000"
+    volumes:
+      - thunderstt-models:/root/.cache/thunderstt/models
+    environment:
+      - THUNDERSTT_MODEL=parakeet-tdt-0.6b-v3
+      - THUNDERSTT_LOG_LEVEL=info
+      - THUNDERSTT_WORKERS=4
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  # Uncomment below for GPU support (requires nvidia-docker).
+  # thunderstt-gpu:
+  #   build:
+  #     context: ..
+  #     dockerfile: docker/Dockerfile.gpu
+  #   image: thunderstt:latest-gpu
+  #   container_name: thunderstt-gpu
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - thunderstt-models:/root/.cache/thunderstt/models
+  #   environment:
+  #     - THUNDERSTT_MODEL=parakeet-tdt-0.6b-v3
+  #     - THUNDERSTT_LOG_LEVEL=info
+  #     - THUNDERSTT_WORKERS=4
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   restart: unless-stopped
+
+volumes:
+  thunderstt-models:
+    driver: local
